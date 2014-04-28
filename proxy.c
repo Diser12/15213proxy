@@ -47,7 +47,7 @@ void parse(int connfd)
     Rio_readlineb(&rio, buf, MAXLINE);
     sscanf(buf, "%s %s %s", method, uri, version);
 
-    //host
+    //host and full path
     if(strncmp("http://", uri, 7) == 0){
         strcpy(host, uri + 7);
         lenHost = (int)strcspn(host, "/");
