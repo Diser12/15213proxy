@@ -12,30 +12,38 @@ static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64;
 static const char *accept_hdr = "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n";
 static const char *accept_encoding_hdr = "Accept-Encoding: gzip, deflate\r\n";
 
+void parse(int connfd);
+
 int main(int argc, char **argv)
 {
-	int port, listenfd, connfd, clientlen;
-	struct sockaddr_in clientaddr;
-	struct hostent *hp;
-	char *haddrp;
-	if (argc != 2) {
-        	fprintf(stderr, "usage: %s <port>\n", argv[0]);
-        	exit(0);
-    	}
-   	port = atoi(argv[1]);
+    int port, listenfd, connfd, clientlen;
+    struct sockaddr_in clientaddr;
+    if (argc != 2) {
+            fprintf(stderr, "usage: %s <port>\n", argv[0]);
+            exit(0);
+        }
+    port = atoi(argv[1]);
 
     printf("\n%d \n\n%s \n%s \n%s\n", 
-    	port, user_agent_hdr, accept_hdr, accept_encoding_hdr);
-	listenfd = Open_listenfd(port);
-	while (1) {
-		clientlen = sizeof(clientaddr);
-		connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);
-		/* Determine the domain name and IP address of the client */
-		hp = Gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr,
-							sizeof(clientaddr.sin_addr.s_addr), AF_INET);
-		haddrp = inet_ntoa(clientaddr.sin_addr);
-		printf("server connected to %s (%s)\n", hp->h_name, haddrp);
-		Close(connfd);
-	}
+        port, user_agent_hdr, accept_hdr, accept_encoding_hdr);
+    listenfd = Open_listenfd(port);
+    while (1) {
+        clientlen = sizeof(clientaddr);
+        connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);
+        parse(connfd);
+        Close(connfd);
+    }
     return 0;
+}
+
+void parse(int connfd)
+{
+    char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
+    rio_t rio;
+
+    Rio_readinitb(&rio, connfd);
+    Rio_readlineb(&rio, buf, MAXLINE);
+    sscanf(buf, "%s %s %s", method, uri, version);
+    
+    printf("method = %s, uri = %s, version = %s\n", method, uri, version);
 }
