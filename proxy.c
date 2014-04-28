@@ -39,25 +39,34 @@ int main(int argc, char **argv)
 void parse(int connfd)
 {
     char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
-    char host[MAXLINE], finalhost[MAXLINE], path[MAXLINE];
-    int lenHost;
+    char host[MAXLINE], finalhost[MAXLINE], path[MAXLINE], port[MAXLINE];
+    int lenHost, portExists;
     rio_t rio;
 
     Rio_readinitb(&rio, connfd);
     Rio_readlineb(&rio, buf, MAXLINE);
     sscanf(buf, "%s %s %s", method, uri, version);
 
-    //host and full path 
+    //host and full path
     if(strncmp("http://", uri, 7) == 0){
         strcpy(host, uri + 7);
-        lenHost = (int)strcspn(host, "/");
+        if(portExists = ((int)strcspn(host, "/") < (int)strcspn(host, ":")))
+            lenHost = strcspn(host, "/");
+        else lenHost = strcspn(host, ":");
         strncpy(finalhost, host, lenHost);
         printf("final host = %s\n", finalhost);
-        strcpy(path, host + lenHost);
-        printf("path = %s\n", path);
+        if(portExists){
+            strcpy(path, host + lenHost);
+            strcpy(port, "80");
+        }
+        else{
+            strncpy(port, host + lenHost, strcspn(host + lenHost, "/"));
+            strcpy(path, host + lenHost + strlen(port));
+            memmove(port, port + 1, strlen(port));
+        }
         strcat(path, " ");
         strcat(path, version);
-        printf("full path = %s\n", path);
+        printf("full path = %s\nport = %s\n", path, port);
     }
     else printf("not http://\n");
 
