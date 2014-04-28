@@ -39,11 +39,20 @@ int main(int argc, char **argv)
 void parse(int connfd)
 {
     char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
+    char host[MAXLINE], finalhost[MAXLINE];
     rio_t rio;
 
     Rio_readinitb(&rio, connfd);
     Rio_readlineb(&rio, buf, MAXLINE);
     sscanf(buf, "%s %s %s", method, uri, version);
-    
+
+    //host
+    if(strncmp("http://", uri, 7) == 0){
+        strcpy(host, uri + 7);
+        strncpy(finalhost, host, (int)strcspn(host, "/"));
+        printf("final host = %s\n", finalhost);
+    }
+    else printf("not http://\n");
+
     printf("method = %s, uri = %s, version = %s\n", method, uri, version);
 }
