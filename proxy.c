@@ -16,7 +16,6 @@ int doproxy(int connfd);
 int read_request(int connfd, rio_t *rp, char *bufrequest, char *hostname, int *port, char *uri);
 int parse_uri(char *uri, char *hostname, int *port);
 
-void echo(int connfd);
 void *thread(void *vargp);
 void parse(int connfd, char *uri, char *hostname, int *port);
 
@@ -32,6 +31,9 @@ int main(int argc, char **argv)
             exit(0);
         }
     port = atoi(argv[1]);
+
+    //ignore sigpipe
+    signal(SIGPIPE, SIG_IGN);
 
     printf("\n%s \n%s \n%s\n", 
         user_agent_hdr, accept_hdr, accept_encoding_hdr);
