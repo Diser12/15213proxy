@@ -14,19 +14,17 @@ static const char *accept_encoding_hdr = "Accept-Encoding: gzip, deflate\r\n";
 
 sem_t mutex;
 
-int doproxy(int connfd);
-int read_request(int connfd, rio_t *rp, char *bufrequest, char *hostname, int *port, char *uri);
-
 void *thread(void *vargp);
+int doit(int fd);
+int read_request(int fd, rio_t *rp, char *bufrequest, char *hostname, int *port, char *uri);
 void parse(char *uri, char *hostname, int *port);
 
 int main(int argc, char **argv)
 {
-    int port, listenfd, *connfd;
+    int port, listenfd, *fd;
     socklen_t clientlen = sizeof(struct sockaddr_in);
     struct sockaddr_in clientaddr;
     pthread_t tid;
-    static int set_num, line_num;
 
     if (argc != 2) {
             fprintf(stderr, "usage: %s <port>\n", argv[0]);
@@ -34,32 +32,47 @@ int main(int argc, char **argv)
         }
     port = atoi(argv[1]);
 
-    //ignore sigpipe
+    //ignore SIGPIPE
     signal(SIGPIPE, SIG_IGN);
 
     printf("\n%s \n%s \n%s\n", 
         user_agent_hdr, accept_hdr, accept_encoding_hdr);
     sem_init(&mutex, 0, 1);
-    set_num = 1;
-    line_num = 10;
     listenfd = Open_listenfd(port);
     while (1) {
-        connfd = Malloc(sizeof(int));
-        *connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);
-        Pthread_create(&tid, NULL, thread, connfd);
+        fd = Malloc(sizeof(int));
+        P(&mutex);
+        *fd = Accept(listenfd, (SA *)&clientaddr, &clientlen);
+        Pthread_create(&tid, NULL, thread, fd);
         Pthread_join(tid, NULL);
     }
     return 0;
 }
 
-/* doproxy:
+/* thread:
+ *  What each thread does:
+ *      Kills itself when done, locks itself into doproxy until finished,
+ *      then unblocks itself.
+ */
+void *thread(void *vargp)
+{
+    int connfd = *((int *)vargp);   
+    V(&mutex);
+    Pthread_detach(pthread_self());    
+    Free(vargp);
+    doit(connfd);
+    Close(connfd); 
+    return NULL;
+}
+
+/* doit:
  *  Handles the actual communication between the client and the server
  *  Takes in the request of the client, parses it out, then sends the 
  *  clients request to the server. The server is then accessed and the 
  *  server sends all of the information back to the client that it is 
  *  able to.
  */
-int doproxy(int connfd)
+int doit(int connfd)
 {
     int port, serverfd, len, response_len;
     char bufrequest[MAXLINE], bufresponse[MAXLINE], hostname[MAXLINE], uri[MAXLINE];
@@ -74,45 +87,37 @@ int doproxy(int connfd)
     /* Read request line and headers */
     rio_readinitb(&rio_client, connfd);
     // bufrequest is the buffer for outgoing request to real server
-    if(read_request(connfd, &rio_client, bufrequest, hostname, &port, uri) < 0){
+    if(read_request(connfd, &rio_client, bufrequest, hostname, &port, uri) < 0) {
         return -1;
     }
     printf("uri:%s\thostname:%s\tport:%d\n", uri, hostname, port);
     printf("bufrequest: %s\n", bufrequest);
 
     ///connect to the server
-    if((serverfd = open_clientfd_r(hostname, port)) < 0)
-        {
+    if((serverfd = open_clientfd_r(hostname, port)) < 0) {
             fprintf(stderr, "open server fd error\n");
             return -1;
-        }
+    }
+    
     rio_readinitb(&rio_server, serverfd);
 
-    if(rio_writen(serverfd, bufrequest, strlen(bufrequest)) < 0)
-    {
+    if(rio_writen(serverfd, bufrequest, strlen(bufrequest)) < 0) {
         printf("bufrequest error:\n%s\n", bufrequest);
         fprintf(stderr, "rio_writen send request error\n");
         close(serverfd);    
-    // send back error msg to client
-    //clienterror(connfd, "request error", "404", "Not found", "Send request to server error");
-
-    return -1;
+        return -1;
     }
 
     // get response from server and send back to the client
     response_len = 0;
-    while((len = rio_readnb(&rio_server, bufresponse, sizeof(bufresponse))) > 0)
-    {
+    while((len = rio_readnb(&rio_server, bufresponse, sizeof(bufresponse))) > 0) {
         printf("hostname:%s\tport:%d\nbufresponse:%s\n", hostname, port, bufresponse);
         response_len += len;
 
-        // TODO: n error!
-            if(rio_writen(connfd, bufresponse, len) < 0)
-            {
-                printf("bufresponse error:%s\nlen:%d\n%s\n", strerror(errno), len, bufresponse); 
-                fprintf(stderr, "rio_writen send response error\n");
-                //clienterror(connfd, "response error", "404", "Not found", "Send response to client error");
-                close(serverfd);
+        if(rio_writen(connfd, bufresponse, len) < 0) {
+            printf("bufresponse error:%s\nlen:%d\n%s\n", strerror(errno), len, bufresponse); 
+            fprintf(stderr, "rio_writen send response error\n");
+            close(serverfd);
             return -1;
             }
         // empty buffer
@@ -152,63 +157,36 @@ int read_request(int connfd, rio_t *rio, char *bufrequest, char *hostname, int *
         return -1;
     }
     while(strcmp(buf, "\r\n")) {
-        // if(strcmp(buf, "\n") == 0)
-        // {
-        //     printf("hahaha!\n");
-        // }
-        // if(strcmp(buf, "\r") == 0)
-        // {
-        //     printf("lalala!\n");
-        // }
-        if(strstr(buf, "Host"))
-        {
+        if(strstr(buf, "Host")) {
             strcat(bufrequest, "Host: ");
             strcat(bufrequest, hostname);
             strcat(bufrequest, "\r\n");
         }
         else if(strstr(buf, "Accept:"))
-                strcat(bufrequest, accept_hdr);
+            strcat(bufrequest, accept_hdr);
         else if(strstr(buf, "Accept-Encoding:"))
-                strcat(bufrequest, accept_encoding_hdr);
+            strcat(bufrequest, accept_encoding_hdr);
         else if(strstr(buf, "User-Agent:"))
-                strcat(bufrequest, user_agent_hdr);
+            strcat(bufrequest, user_agent_hdr);
         else if(strstr(buf, "Proxy-Connection:"))
-                strcat(bufrequest, "Proxy-Connection: close\r\n");
+            strcat(bufrequest, "Proxy-Connection: close\r\n");
         else if(strstr(buf, "Connection:"))
-                strcat(bufrequest, "Connection: close\r\n");
+            strcat(bufrequest, "Connection: close\r\n");
         else if(!strstr(buf, "Cookie:"))
-        strcat(bufrequest, buf);
+            strcat(bufrequest, buf);
 
         //empty buffer
         memset(buf, 0, sizeof(buf));
-            if(rio_readlineb(rio, buf, MAXLINE) < 0)
-            {
-                    fprintf(stderr, "rio_readlineb read request error\n");
-                    return -1;
-            }
+        if(rio_readlineb(rio, buf, MAXLINE) < 0) {
+            fprintf(stderr, "rio_readlineb read request error\n");
+            return -1;
         }
+    }
     
     //add header separater
     strcat(bufrequest, "\r\n");
 
     return 0;
-}
-
-/* thread:
- *  What each thread does:
- *      Kills itself when done, locks itself into doproxy until finished,
- *      then unblocks itself.
- */
-void *thread(void *vargp)
-{
-    int connfd = *((int *)vargp);   
-    Pthread_detach(pthread_self());    
-    Free(vargp);
-    P(&mutex);
-    doproxy(connfd);
-    V(&mutex);
-    Close(connfd); 
-    return NULL;
 }
 
 /* parse: 
@@ -226,11 +204,11 @@ void parse(char *uri, char *hostname, int *port)
         lenHost = strcspn(host, "/");
     else lenHost = strcspn(host, ":");
     strncpy(hostname, host, lenHost);
-    if(portExists){
+    if(portExists) {
         strcpy(path, host + lenHost);
         *port = 80;
     }
-    else{
+    else {
         strncpy(portHolder, host + lenHost, strcspn(host + lenHost, "/"));
         strcpy(path, host + lenHost + strlen(portHolder));
         memmove(portHolder, portHolder + 1, strlen(portHolder));
