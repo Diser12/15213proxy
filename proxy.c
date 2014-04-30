@@ -151,8 +151,11 @@ int read_request(int connfd, rio_t *rio, char *bufrequest, char *hostname, int *
     printf("uri: %s\n", uri);
     // extract hostname and port info
     parse(uri, hostname, port, path);
+    if(strncmp("localhost", hostname, strlen("localhost")))
+        sprintf(bufrequest, "%s %s HTTP/1.0\r\n", method, uri);
     // fill in request for real server
-    sprintf(bufrequest, "%s %s HTTP/1.0\r\n", method, path);
+    else
+        sprintf(bufrequest, "%s %s HTTP/1.0\r\n", method, path);
     printf("bufrequest: %s\n", bufrequest);
         
     // request hdr
