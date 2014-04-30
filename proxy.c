@@ -17,7 +17,7 @@ sem_t mutex;
 void *thread(void *vargp);
 int doit(int connfd);
 int read_request(int connfd, rio_t *rp, char *buf_request, char *host, int *port, char *uri);
-void parse(char *uri, char *host, int *port);
+void parse(char *uri, char *host, int *port, char *path);
 
 int main(int argc, char **argv)
 {
@@ -133,7 +133,7 @@ int doit(int connfd)
  */
 int read_request(int connfd, rio_t *rio, char *buf_request, char *host, int *port, char *uri)
 {
-    char buf[MAXLINE], method[MAXLINE];
+    char buf[MAXLINE], method[MAXLINE], path[MAXLINE];
     // set our buffer and method to 0
     memset(buf, 0, sizeof(buf));
     memset(method, 0, sizeof(method));
@@ -145,7 +145,7 @@ int read_request(int connfd, rio_t *rio, char *buf_request, char *host, int *por
         return -1;
     printf("uri: %s\n", uri);
     // parse to get hostname and port info
-    parse(uri, host, port);
+    parse(uri, host, port, path);
     // fill in the request to send to server
     sprintf(buf_request, "%s %s HTTP/1.0\r\n", method, uri);
     printf("bufrequest: %s\n", buf_request);
@@ -193,9 +193,9 @@ int read_request(int connfd, rio_t *rio, char *buf_request, char *host, int *por
  *  takes in the uri and separates the hostname and port from it
  *  and puts them into their respective pointers.
  */
-void parse(char *uri, char *host, int *port)
+void parse(char *uri, char *host, int *port, char *path)
 {
-    char hostname[MAXLINE], path[MAXLINE], portHolder[MAXLINE];
+    char hostname[MAXLINE], portHolder[MAXLINE];
     int lenHost, portExists;
 
     strcpy(hostname, uri + strlen("http://"));
